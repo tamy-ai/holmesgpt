@@ -151,13 +151,19 @@ def support_offer_blocks(channel: str, ts: str) -> list[dict[str, Any]]:
     ]
 
 
+def thread_of_click(body: dict[str, Any]) -> str | None:
+    """The thread of the message that holds the clicked button. An answer sent without it
+    lands in the channel, outside the thread (seen on 2026-10-26)."""
+    return (body.get("message") or {}).get("thread_ts") or (body.get("container") or {}).get("thread_ts")
+
+
 def decision_handler(bot: Bot, *, approved: bool) -> Any:
     """The click on Aprovar or Negar. Bolt injects only its own argument names."""
 
     def handle(ack: Any, body: dict[str, Any], action: dict[str, Any], respond: Any) -> None:
         ack()
         said = bot.decide(request_id=action["value"], user=body["user"]["id"], approved=approved)
-        respond(text=said, replace_original=False, response_type="ephemeral")
+        respond(text=said, replace_original=False, response_type="ephemeral", thread_ts=thread_of_click(body))
 
     return handle
 
@@ -167,8 +173,14 @@ def resolved_handler(jira: BotJira, slack: "BoltSlack", *, resolved: bool) -> An
 
     def handle(ack: Any, body: dict[str, Any], action: dict[str, Any], respond: Any) -> None:
         ack()
-        said = answer_resolved(action["value"], body["user"]["id"], resolved, jira, slack)
-        respond(text=said, replace_original=False, response_type="ephemeral")
+        said, changed = answer_resolved(action["value"], body["user"]["id"], resolved, jira, slack)
+        thread_ts = thread_of_click(body)
+        channel = (body.get("channel") or {}).get("id") or (body.get("container") or {}).get("channel_id")
+        if changed and thread_ts:
+            # A recorded answer is for the whole thread to see.
+            slack.post(channel=channel, thread_ts=thread_ts, text=said)
+            return
+        respond(text=said, replace_original=False, response_type="ephemeral", thread_ts=thread_ts)
 
     return handle
 

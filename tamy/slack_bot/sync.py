@@ -133,21 +133,21 @@ def _doc(text: str) -> dict[str, Any]:
     return {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": text}]}]}
 
 
-def answer_resolved(key: str, user: str, resolved: bool, jira: ResolveJira, slack: ThreadReader) -> str:
+def answer_resolved(key: str, user: str, resolved: bool, jira: ResolveJira, slack: ThreadReader) -> tuple[str, bool]:
     """The click on Resolveu or Ainda não. Only who opened the thread answers, and only for a
-    ticket this bot opened. Returns what to tell who clicked."""
+    ticket this bot opened. Returns what to say, and whether the ticket changed."""
     labels = jira.issue_labels(key)
     thread = thread_of(labels)
     if BOT_LABEL not in labels or thread is None:
-        return "Esse chamado não foi aberto por mim. Não mexo nele."
+        return "Esse chamado não foi aberto por mim. Não mexo nele.", False
     messages = slack.replies(*thread)
     if not messages or messages[0].get("user") != user:
-        return "Só quem pediu o chamado responde isso."
+        return "Só quem pediu o chamado responde isso.", False
     name = slack.display_name(user)
     if resolved:
         jira.add_comment(key, _doc(f"{name} confirmou no Slack que o problema está resolvido."))
         jira.add_label(key, CONFIRMED_LABEL)
-        return f"Obrigado! Registrei no {key} que está resolvido."
+        return f"Obrigado! Registrei no {key} que está resolvido.", True
     jira.add_comment(key, _doc(f"{name} disse no Slack que o problema ainda não está resolvido."))
     jira.reopen(key)
-    return f"Entendi, reabri o {key} para o time olhar de novo."
+    return f"Entendi, reabri o {key} para o time olhar de novo.", True

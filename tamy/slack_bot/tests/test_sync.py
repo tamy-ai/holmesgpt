@@ -144,16 +144,16 @@ class ThreadReader:
 def test_the_one_who_opened_the_thread_confirms_and_the_ticket_gets_a_comment_and_a_label() -> None:
     jira = ResolveJira(["origem-slack", THREAD])
 
-    said = answer_resolved("TA-9", "U1", True, jira, ThreadReader("U1"))
+    said, changed = answer_resolved("TA-9", "U1", True, jira, ThreadReader("U1"))
 
-    assert "Obrigado" in said
+    assert "Obrigado" in said and changed
     assert jira.added == [("TA-9", "confirmado-no-slack")] and len(jira.comments) == 1 and jira.moved == []
 
 
 def test_ainda_nao_reopens_the_ticket_and_says_so() -> None:
     jira = ResolveJira(["origem-slack", THREAD])
 
-    said = answer_resolved("TA-9", "U1", False, jira, ThreadReader("U1"))
+    said, _ = answer_resolved("TA-9", "U1", False, jira, ThreadReader("U1"))
 
     assert "reabri" in said.lower()
     assert jira.moved == ["TA-9"] and len(jira.comments) == 1
@@ -162,9 +162,9 @@ def test_ainda_nao_reopens_the_ticket_and_says_so() -> None:
 def test_a_stranger_changes_nothing() -> None:
     jira = ResolveJira(["origem-slack", THREAD])
 
-    said = answer_resolved("TA-9", "U2", True, jira, ThreadReader("U1"))
+    said, changed = answer_resolved("TA-9", "U2", True, jira, ThreadReader("U1"))
 
-    assert "quem pediu" in said
+    assert "quem pediu" in said and not changed
     assert jira.added == [] and jira.comments == [] and jira.moved == []
 
 
