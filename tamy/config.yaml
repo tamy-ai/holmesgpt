@@ -1,7 +1,7 @@
 # Holmes da Tamy (decisao 0751 do tamy-consultant).
 # Segredos vem de variaveis de ambiente do Railway, nunca deste arquivo.
 
-model: vertex_ai/gemini-3.1-flash-lite   # troque pela variavel MODEL se precisar
+model: vertex_ai/gemini-3.1-pro-preview   # creating a ticket needs reasoning; flash-lite asked for data the thread already had
 custom_skill_paths:
   - /app/tamy/skills
 
