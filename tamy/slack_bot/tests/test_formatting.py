@@ -160,3 +160,42 @@ def test_the_preview_of_the_comment_tool_names_the_ticket_and_shows_the_text() -
     text = json.dumps(approval_blocks("r", [approval], requester="U1"), ensure_ascii=False)
 
     assert "TA-1359" in text and "Causa provável" in text and "GET" not in text
+
+
+def test_jira_wiki_headings_become_slack_bold() -> None:
+    assert to_slack_mrkdwn("h3. Causa provável\ntexto\nh2. Evidências") == "*Causa provável*\ntexto\n*Evidências*"
+
+
+def test_the_ticket_card_names_every_answer_in_portuguese_and_never_a_raw_key() -> None:
+    approval = {
+        "tool_call_id": "c11",
+        "tool_name": "tamy_create_ticket",
+        "description": "x",
+        "params": {
+            "summary": "S",
+            "ticket_type": "bug",
+            "priority": "P2",
+            "answers_json": json.dumps(
+                {"bug_actual": "a", "bug_client": "loja 3", "bug_channel": "Chrome", "bug_when": "hoje"}
+            ),
+        },
+    }
+
+    text = json.dumps(approval_blocks("r", [approval], requester="U1"), ensure_ascii=False)
+
+    assert "bug_" not in text
+    assert "Loja ou cliente: loja 3" in text and "Navegador ou aparelho: Chrome" in text
+
+
+def test_the_comment_card_shows_the_text_as_slack_and_does_not_say_nothing_was_created() -> None:
+    approval = {
+        "tool_call_id": "c12",
+        "tool_name": "tamy_comment_ticket",
+        "description": "x",
+        "params": {"ticket_key": "TA-5", "comment": "h3. Causa\n" + "palavra " * 300},
+    }
+
+    text = json.dumps(approval_blocks("r", [approval], requester="U1"), ensure_ascii=False)
+
+    assert "h3." not in text and "*Causa*" in text
+    assert "Nada foi criado" not in text and "Nada foi comentado ainda" in text

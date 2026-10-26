@@ -16,6 +16,7 @@ MAX_MESSAGE_CHARS = 3500
 MAX_BODY_PREVIEW = 700
 
 _HEADING = re.compile(r"^#{1,6}\s+(.*)$", re.MULTILINE)
+_JIRA_HEADING = re.compile(r"^h[1-6]\.\s+(.*)$", re.MULTILINE)
 _BOLD = re.compile(r"\*\*(.+?)\*\*")
 _LINK = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
 _MENTION = re.compile(r"<([!@#][^>]*)>")
@@ -24,6 +25,7 @@ _MENTION = re.compile(r"<([!@#][^>]*)>")
 def to_slack_mrkdwn(text: str) -> str:
     escaped = _MENTION.sub(lambda m: f"&lt;{m.group(1)}&gt;", text)
     escaped = _HEADING.sub(lambda m: f"*{m.group(1).strip()}*", escaped)
+    escaped = _JIRA_HEADING.sub(lambda m: f"*{m.group(1).strip()}*", escaped)
     escaped = _BOLD.sub(r"*\1*", escaped)
     return _LINK.sub(r"<\2|\1>", escaped)
 
@@ -64,7 +66,10 @@ _TICKET_ANSWER_LABELS = (
     ("bug_steps", "Passos"),
     ("bug_when", "Quando"),
     ("bug_scope", "Quem e onde"),
+    ("bug_client", "Loja ou cliente"),
+    ("bug_channel", "Navegador ou aparelho"),
 )
+MAX_COMMENT_PREVIEW = 2800
 
 
 def _answers(params: dict[str, Any]) -> dict[str, Any]:
@@ -98,8 +103,8 @@ def _create_ticket_preview(params: dict[str, Any]) -> str:
 def _preview_of(approval: dict[str, Any]) -> str:
     params = approval.get("params", {})
     if approval.get("tool_name") == "tamy_comment_ticket":
-        comment = str(params.get("comment", ""))[:MAX_BODY_PREVIEW]
-        return f"*Comentar em {params.get('ticket_key', '?')}* (a investigação)\n```{comment}```"
+        comment = to_slack_mrkdwn(str(params.get("comment", ""))[:MAX_COMMENT_PREVIEW])
+        return f"*Comentar em {params.get('ticket_key', '?')}* (a investigação)\n{comment}"
     if approval.get("tool_name") == "tamy_create_ticket":
         return _create_ticket_preview(params)
     url = str(params.get("url", ""))
@@ -132,13 +137,20 @@ def approval_blocks(
 ) -> list[dict[str, Any]]:
     """The preview of what the bot will do in Jira, and the two buttons."""
     sections = "\n\n".join(_preview_of(a) for a in approvals)
+    only_comments = all(a.get("tool_name") == "tamy_comment_ticket" for a in approvals)
+    footer = (
+        "_Nada foi comentado ainda. Confira e clique em Aprovar._"
+        if only_comments
+        else "_Nada foi criado ainda. Confira e clique em Aprovar._"
+    )
     return [
         {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
                 "text": to_slack_mrkdwn(sections)
-                + "\n\n_Nada foi criado ainda. Confira e clique em Aprovar._",
+                + "\n\n"
+                + footer,
             },
         },
         {
