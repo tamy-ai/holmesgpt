@@ -21,13 +21,24 @@ from holmes.core.tools import (
     ToolsetTag,
 )
 from tamy.code import reader
+from tamy.code.budget import Budget
+
+CODE_CALLS_PER_CONVERSATION = int(os.environ.get("CODE_CALLS_PER_CONVERSATION", "8"))
+_budget = Budget(limit=CODE_CALLS_PER_CONVERSATION, window_s=900)
+OUT_OF_BUDGET = (
+    "Orçamento de leitura de código acabou nesta conversa. Pare de buscar e responda agora com o que "
+    "já leu, citando arquivo:linha só do que você leu, e diga o que ficou sem conferir."
+)
 
 
 def _root() -> Path:
     return Path(os.environ.get("CODE_ROOT", "/app/code"))
 
 
-def _result(params: dict, run) -> StructuredToolResult:
+def _result(params: dict, run, context: ToolInvokeContext | None = None) -> StructuredToolResult:
+    key = str(((context.request_context or {}) if context else {}).get("conversation_id") or "all")
+    if not _budget.spend(key):
+        return StructuredToolResult(status=StructuredToolResultStatus.ERROR, error=OUT_OF_BUDGET, params=params)
     try:
         data = run()
     except reader.CodeError as error:
@@ -53,6 +64,7 @@ class ReadFile(Tool):
             lambda: reader.read_file(
                 _root(), str(params["path"]), int(params.get("start") or 1), int(params["end"]) if params.get("end") else None
             ),
+            context,
         )
 
     def get_parameterized_one_liner(self, params: dict) -> str:
@@ -68,7 +80,7 @@ class ListDir(Tool):
         )
 
     def _invoke(self, params: dict, context: ToolInvokeContext) -> StructuredToolResult:
-        return _result(params, lambda: reader.list_dir(_root(), str(params.get("path") or "")))
+        return _result(params, lambda: reader.list_dir(_root(), str(params.get("path") or "")), context)
 
     def get_parameterized_one_liner(self, params: dict) -> str:
         return f"Code: list {params.get('path', '') or '/'}"
@@ -86,7 +98,7 @@ class SearchCode(Tool):
         )
 
     def _invoke(self, params: dict, context: ToolInvokeContext) -> StructuredToolResult:
-        return _result(params, lambda: reader.search(_root(), str(params["pattern"]), str(params.get("path") or "")))
+        return _result(params, lambda: reader.search(_root(), str(params["pattern"]), str(params.get("path") or "")), context)
 
     def get_parameterized_one_liner(self, params: dict) -> str:
         return f"Code: search {params.get('pattern', '')}"
