@@ -170,4 +170,4 @@ COPY ./server.py /app/server.py
 COPY ./holmes_cli.py /app/holmes_cli.py
 
 ENV PYTHONPATH=/app
-ENTRYPOINT ["python", "-u", "server.py"]
+ENTRYPOINT ["/app/tamy/entrypoint.sh"]
