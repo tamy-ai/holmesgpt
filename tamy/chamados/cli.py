@@ -256,17 +256,71 @@ class CommentJira(Protocol):
     def add_comment(self, key: str, body: dict[str, Any]) -> None: ...
 
 
+_INLINE = re.compile(r"\*\*(.+?)\*\*|`([^`]+)`|\*([^*\s][^*]*?)\*")
+_BULLET = re.compile(r"^[*-]\s+(.*)$")
+_NUMBERED = re.compile(r"^\d+[.)]\s+(.*)$")
+_HEADING_LINE = re.compile(r"^(?:h([1-6])\.|#{1,6})\s*(.*)$")
+
+
+def _inline_nodes(text: str) -> list[dict[str, Any]]:
+    """Bold, italic and code marks from the Markdown a model writes. Never leaves the markers."""
+    nodes: list[dict[str, Any]] = []
+    position = 0
+    for match in _INLINE.finditer(text):
+        if match.start() > position:
+            nodes.append(adf_text(text[position : match.start()]))
+        bold, code, italic = match.groups()
+        mark, value = ("strong", bold) if bold else ("code", code) if code else ("em", italic)
+        nodes.append({"type": "text", "text": value, "marks": [{"type": mark}]})
+        position = match.end()
+    if position < len(text):
+        nodes.append(adf_text(text[position:]))
+    return nodes or [adf_text(text)]
+
+
+def _list(kind: str, items: list[str]) -> dict[str, Any]:
+    return {
+        "type": kind,
+        "content": [
+            {"type": "listItem", "content": [adf_paragraph(_inline_nodes(item))]} for item in items
+        ],
+    }
+
+
 def _comment_doc(text: str) -> dict[str, Any]:
     blocks: list[dict[str, Any]] = []
-    for chunk in re.split(r"\n\s*\n", text.strip()):
-        for line in chunk.splitlines():
-            if not line.strip():
-                continue
-            heading = re.match(r"^h([1-6])\.\s*(.*)$", line.strip())
-            if heading:
-                blocks.append(adf_heading(heading.group(2), int(heading.group(1))))
-            else:
-                blocks.append(adf_paragraph([adf_text(line.strip())]))
+    pending: list[str] = []
+    pending_kind = ""
+
+    def flush() -> None:
+        nonlocal pending, pending_kind
+        if pending:
+            blocks.append(_list(pending_kind, pending))
+        pending, pending_kind = [], ""
+
+    for raw in text.strip().splitlines():
+        line = raw.strip()
+        if not line:
+            flush()
+            continue
+        bullet, numbered = _BULLET.match(line), _NUMBERED.match(line)
+        item = bullet or numbered
+        if item:
+            kind = "bulletList" if bullet else "orderedList"
+            if pending_kind and pending_kind != kind:
+                flush()
+            pending_kind = kind
+            pending.append(item.group(1))
+            continue
+        flush()
+        heading = _HEADING_LINE.match(line)
+        if heading:
+            blocks.append(adf_heading(heading.group(2).strip("* "), int(heading.group(1) or 3)))
+        elif re.fullmatch(r"\*[^*].*[^*]\*", line) and _INLINE.fullmatch(line):
+            blocks.append(adf_heading(line.strip("*"), 3))
+        else:
+            blocks.append(adf_paragraph(_inline_nodes(line)))
+    flush()
     return adf_blocks(blocks)
 
 

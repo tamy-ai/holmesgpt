@@ -247,3 +247,26 @@ def test_a_key_outside_the_ta_project_or_an_empty_text_writes_nothing() -> None:
     assert not comment_investigation("TA-1; DROP", "texto", jira).ok
     assert not comment_investigation("TA-1359", "   ", jira).ok
     assert jira.comments == []
+
+
+def _comment_body(text: str) -> dict[str, Any]:
+    jira = CommentJira(["origem-slack"])
+    assert comment_investigation("TA-9", text, jira).ok
+    return jira.comments[0][1]
+
+
+def test_markdown_bold_becomes_a_bold_mark_and_never_shows_asterisks() -> None:
+    body = _comment_body("**Confiança: baixa** e `api-server`")
+
+    dumped = json.dumps(body, ensure_ascii=False)
+    assert "**" not in dumped and "`" not in dumped
+    assert '"type": "strong"' in dumped and '"type": "code"' in dumped
+
+
+def test_bullet_and_numbered_lines_become_real_lists() -> None:
+    body = _comment_body("*Evidências*\n* Métricas sem erro\n* Logs sem erro\n\n1. Abrir o painel\n2. Ver o Network")
+
+    kinds = [block["type"] for block in body["content"]]
+    assert "bulletList" in kinds and "orderedList" in kinds
+    bullets = next(b for b in body["content"] if b["type"] == "bulletList")
+    assert len(bullets["content"]) == 2
