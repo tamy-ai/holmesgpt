@@ -19,6 +19,7 @@ from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from tamy.slack_bot.bot import Bot
+from tamy.slack_bot.sse import final_message
 from tamy.slack_bot.state import Store
 
 logger = logging.getLogger("tamy.slack_bot")
@@ -33,9 +34,11 @@ class HolmesClient:
         self._url = base_url.rstrip("/")
 
     def chat(self, payload: dict[str, Any]) -> dict[str, Any]:
-        response = httpx.post(f"{self._url}/api/chat", json=payload, timeout=HOLMES_TIMEOUT_S)
-        response.raise_for_status()
-        return response.json()
+        with httpx.stream(
+            "POST", f"{self._url}/api/chat", json={**payload, "stream": True}, timeout=HOLMES_TIMEOUT_S
+        ) as response:
+            response.raise_for_status()
+            return final_message(response.iter_lines())
 
 
 class BoltSlack:
