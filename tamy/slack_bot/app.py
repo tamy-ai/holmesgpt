@@ -20,6 +20,7 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from tamy.slack_bot.bot import Bot
 from tamy.slack_bot.sse import final_message
+from tamy.slack_bot.thread import read_thread
 from tamy.slack_bot.state import Store
 
 logger = logging.getLogger("tamy.slack_bot")
@@ -68,7 +69,7 @@ class BoltSlack:
 
     def replies(self, channel: str, thread_ts: str) -> list[dict[str, Any]]:
         try:
-            return list(self._client.conversations_replies(channel=channel, ts=thread_ts, limit=40)["messages"])
+            return read_thread(self._client, channel, thread_ts)
         except Exception:
             logger.exception("could not read the thread")
             return []
