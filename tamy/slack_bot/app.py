@@ -84,6 +84,17 @@ def support_offer_blocks(channel: str, ts: str) -> list[dict[str, Any]]:
     ]
 
 
+def decision_handler(bot: Bot, *, approved: bool) -> Any:
+    """The click on Aprovar or Negar. Bolt injects only its own argument names."""
+
+    def handle(ack: Any, body: dict[str, Any], action: dict[str, Any], respond: Any) -> None:
+        ack()
+        said = bot.decide(request_id=action["value"], user=body["user"]["id"], approved=approved)
+        respond(text=said, replace_original=False, response_type="ephemeral")
+
+    return handle
+
+
 def build_app() -> tuple[App, SocketModeHandler]:
     app = App(token=os.environ["SLACK_BOT_TOKEN"])
     slack = BoltSlack(app.client)
@@ -130,13 +141,8 @@ def build_app() -> tuple[App, SocketModeHandler]:
             ),
         )
 
-    for action_id, approved in (("holmes_approve", True), ("holmes_deny", False)):
-
-        @app.action(action_id)
-        def on_decision(ack: Any, body: dict[str, Any], action: dict[str, Any], respond: Any, approved: bool = approved) -> None:
-            ack()
-            said = bot.decide(request_id=action["value"], user=body["user"]["id"], approved=approved)
-            respond(text=said, replace_original=False, response_type="ephemeral")
+    app.action("holmes_approve")(decision_handler(bot, approved=True))
+    app.action("holmes_deny")(decision_handler(bot, approved=False))
 
     return app, SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"])
 
