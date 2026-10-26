@@ -21,6 +21,8 @@ class Pending:
     requester: str
     history: list[dict[str, Any]]
     tool_call_ids: list[str]
+    # Set when the approval opens a ticket: the area is where the links of the ticket point.
+    create_area: str | None = None
 
 
 class Store:

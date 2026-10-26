@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import logging
 import uuid
+import re
+from collections.abc import Callable
 from typing import Any, Protocol
 
 from tamy.slack_bot.formatting import approval_blocks, split_message, to_slack_mrkdwn
@@ -57,10 +59,18 @@ class Holmes(Protocol):
 
 
 class Bot:
-    def __init__(self, slack: Slack, holmes: Holmes, store: Store) -> None:
+    def __init__(
+        self,
+        slack: Slack,
+        holmes: Holmes,
+        store: Store,
+        enricher: Callable[[str, str, str, str], str] | None = None,
+    ) -> None:
         self._slack = slack
         self._holmes = holmes
         self._store = store
+        # (ticket key, channel, thread, area) -> the line to tell the thread, or "".
+        self._enricher = enricher
 
     def thread_context(self, channel: str, thread_ts: str) -> str:
         """The thread so far, for a conversation the bot forgot (a restart)."""
@@ -121,18 +131,33 @@ class Bot:
             "user_id": user,
             "conversation_id": f"{pending.channel}-{pending.thread_ts}",
         }
-        self._finish(payload, pending.channel, pending.thread_ts, pending.requester, working)
+        analysis = self._finish(payload, pending.channel, pending.thread_ts, pending.requester, working)
+        if approved and pending.create_area is not None:
+            self._enrich(pending, analysis)
         return "Aprovado." if approved else "Negado."
+
+    def _enrich(self, pending: Pending, analysis: str) -> None:
+        match = re.search(r"\bTA-\d+\b", analysis)
+        if self._enricher is None or match is None:
+            return
+        try:
+            line = self._enricher(match.group(0), pending.channel, pending.thread_ts, pending.create_area or "")
+        except Exception:
+            logger.exception("could not enrich %s", match.group(0))
+            return
+        if line:
+            self._slack.post(channel=pending.channel, thread_ts=pending.thread_ts, text=line)
 
     def _finish(
         self, payload: dict[str, Any], channel: str, thread_ts: str, user: str, working_ts: str
-    ) -> None:
+    ) -> str:
+        """Posts the answer. Returns its text, so the caller can read the ticket key from it."""
         try:
             answer = self._holmes.chat(payload)
         except Exception:
             logger.exception("Holmes did not answer")
             self._slack.update(channel=channel, ts=working_ts, text=NOT_REACHED)
-            return
+            return ""
         self._store.set_history(channel, thread_ts, answer.get("conversation_history", []))
         analysis = str(answer.get("analysis") or "").strip()
         fallback = "Preparei o pedido. Confira abaixo." if answer.get("pending_approvals") else "(sem resposta)"
@@ -151,6 +176,7 @@ class Bot:
                     user,
                     answer.get("conversation_history", []),
                     [a["tool_call_id"] for a in approvals],
+                    _create_area(approvals),
                 ),
             )
             self._slack.post(
@@ -159,3 +185,12 @@ class Bot:
                 text="Preciso da sua aprovação.",
                 blocks=approval_blocks(request_id, approvals, requester=user),
             )
+        return analysis
+
+
+def _create_area(approvals: list[dict[str, Any]]) -> str | None:
+    """The area of the ticket this approval would open, or None when it opens none."""
+    for approval in approvals:
+        if approval.get("tool_name") == "tamy_create_ticket":
+            return str((approval.get("params") or {}).get("area") or "")
+    return None

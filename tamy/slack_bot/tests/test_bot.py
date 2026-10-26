@@ -58,9 +58,9 @@ def _pending() -> dict[str, Any]:
     }
 
 
-def _bot(answers: list[dict[str, Any]]) -> tuple[Bot, FakeSlack, FakeHolmes, Store]:
+def _bot(answers: list[dict[str, Any]], enricher: Any = None) -> tuple[Bot, FakeSlack, FakeHolmes, Store]:
     slack, holmes, store = FakeSlack(), FakeHolmes(answers), Store(clock=lambda: 0.0)
-    return Bot(slack, holmes, store), slack, holmes, store
+    return Bot(slack, holmes, store, enricher=enricher), slack, holmes, store
 
 
 def test_a_question_gets_one_answer_in_the_thread() -> None:
@@ -199,3 +199,65 @@ def test_the_ask_carries_the_thread_data_the_ticket_needs() -> None:
     assert "thread_url=https://slack.test/C1/1.0" in ask
     assert "requester=Matheus" in ask
     assert "U9" not in ask
+
+
+def _create_pending(area: str = "vendas") -> dict[str, Any]:
+    return {
+        "tool_call_id": "call-9",
+        "tool_name": "tamy_create_ticket",
+        "description": "x",
+        "params": {"summary": "S", "ticket_type": "bug", "priority": "P2", "area": area},
+    }
+
+
+def _click(bot: Bot, slack: FakeSlack, approved: bool) -> str:
+    request_id = slack.posts[-1]["blocks"][1]["elements"][0]["value"]
+    return bot.decide(request_id=request_id, user="U9", approved=approved)
+
+
+def test_an_approved_creation_gets_the_files_and_links_of_the_thread() -> None:
+    calls: list[tuple[str, str, str, str]] = []
+
+    def enricher(key: str, channel: str, thread_ts: str, area: str) -> str:
+        calls.append((key, channel, thread_ts, area))
+        return "Anexei 2 arquivos e 3 links ao chamado."
+
+    bot, slack, _, _ = _bot(
+        [_answer("vou criar", pending_approvals=[_create_pending("dre")]), _answer("Chamado criado: <https://x/browse/TA-77|TA-77>")],
+        enricher,
+    )
+    bot.ask(channel="C1", thread_ts="1.0", user="U9", text="abre um bug")
+
+    _click(bot, slack, True)
+
+    assert calls == [("TA-77", "C1", "1.0", "dre")]
+    assert any("Anexei 2 arquivos" in p.get("text", "") for p in slack.posts)
+
+
+def test_a_denied_creation_or_a_comment_never_enriches() -> None:
+    calls: list[Any] = []
+    enricher = lambda *a: calls.append(a) or ""  # noqa: E731
+
+    bot, slack, _, _ = _bot([_answer("vou criar", pending_approvals=[_create_pending()]), _answer("ok, não criei TA-5")], enricher)
+    bot.ask(channel="C1", thread_ts="1.0", user="U9", text="abre um bug")
+    _click(bot, slack, False)
+
+    comment = {"tool_call_id": "c", "tool_name": "tamy_comment_ticket", "description": "x", "params": {"ticket_key": "TA-5", "comment": "t"}}
+    bot2, slack2, _, _ = _bot([_answer("vou comentar", pending_approvals=[comment]), _answer("Comentei no TA-5")], enricher)
+    bot2.ask(channel="C1", thread_ts="1.0", user="U9", text="comenta")
+    _click(bot2, slack2, True)
+
+    assert calls == []
+
+
+def test_an_answer_with_no_ticket_key_does_not_enrich() -> None:
+    calls: list[Any] = []
+    bot, slack, _, _ = _bot(
+        [_answer("vou criar", pending_approvals=[_create_pending()]), _answer("Faltou um dado, pergunto já.")],
+        lambda *a: calls.append(a) or "",
+    )
+    bot.ask(channel="C1", thread_ts="1.0", user="U9", text="abre um bug")
+
+    _click(bot, slack, True)
+
+    assert calls == []
