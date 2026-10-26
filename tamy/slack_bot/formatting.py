@@ -58,8 +58,47 @@ def _body(params: dict[str, Any]) -> Any:
         return raw
 
 
+_TICKET_ANSWER_LABELS = (
+    ("bug_actual", "O que aconteceu"),
+    ("bug_expected", "O esperado"),
+    ("bug_steps", "Passos"),
+    ("bug_when", "Quando"),
+    ("bug_scope", "Quem e onde"),
+)
+
+
+def _answers(params: dict[str, Any]) -> dict[str, Any]:
+    try:
+        loaded = json.loads(params.get("answers_json") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _create_ticket_preview(params: dict[str, Any]) -> str:
+    """The tool `tamy_create_ticket`: what the person is about to open in Jira."""
+    lines = [
+        f"*Criar chamado* ({params.get('ticket_type', '?')}, {params.get('priority', '?')})",
+        f"*{params.get('summary') or '(sem título)'}*",
+    ]
+    if params.get("priority_reason"):
+        lines.append(f"Prioridade: {params['priority_reason']}")
+    for key, label in (("client", "Cliente"), ("area", "Área"), ("channel", "Canal")):
+        if params.get(key):
+            lines.append(f"{label}: {params[key]}")
+    answers = _answers(params)
+    shown = [(label, answers[key]) for key, label in _TICKET_ANSWER_LABELS if answers.get(key)]
+    shown += [(key, value) for key, value in answers.items() if value and key not in dict(_TICKET_ANSWER_LABELS)]
+    lines += [f"{label}: {str(value)[:MAX_BODY_PREVIEW]}" for label, value in shown]
+    if params.get("acceptance"):
+        lines.append(f"Critérios de aceite: {str(params['acceptance'])[:MAX_BODY_PREVIEW]}")
+    return "\n".join(lines)
+
+
 def _preview_of(approval: dict[str, Any]) -> str:
     params = approval.get("params", {})
+    if approval.get("tool_name") == "tamy_create_ticket":
+        return _create_ticket_preview(params)
     url = str(params.get("url", ""))
     method = str(params.get("method", "GET")).upper()
     body = _body(params)

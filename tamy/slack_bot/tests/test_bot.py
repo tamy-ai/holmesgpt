@@ -172,3 +172,12 @@ def test_the_system_prompt_forbids_writing_without_the_click_and_client_text() -
     assert "aprova" in SYSTEM_PROMPT.lower()
     assert "texto de cliente" in SYSTEM_PROMPT.lower()
     assert "chamado-regras" in SYSTEM_PROMPT
+
+
+def test_a_pause_without_text_never_shows_the_word_none() -> None:
+    answer = {"analysis": None, "conversation_history": [], "pending_approvals": [_pending()]}
+    bot, slack, _, _ = _bot([answer])
+
+    bot.ask(channel="C1", thread_ts="1.0", user="U9", text="abre um bug")
+
+    assert "None" not in slack.updates[0]["text"]

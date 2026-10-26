@@ -122,7 +122,9 @@ class Bot:
             self._slack.update(channel=channel, ts=working_ts, text=NOT_REACHED)
             return
         self._store.set_history(channel, thread_ts, answer.get("conversation_history", []))
-        parts = split_message(to_slack_mrkdwn(str(answer.get("analysis", "")).strip() or "(sem resposta)"))
+        analysis = str(answer.get("analysis") or "").strip()
+        fallback = "Preparei o pedido. Confira abaixo." if answer.get("pending_approvals") else "(sem resposta)"
+        parts = split_message(to_slack_mrkdwn(analysis or fallback))
         self._slack.update(channel=channel, ts=working_ts, text=parts[0])
         for extra in parts[1:]:
             self._slack.post(channel=channel, thread_ts=thread_ts, text=extra)

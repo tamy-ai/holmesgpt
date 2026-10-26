@@ -124,3 +124,26 @@ def test_a_body_that_is_not_json_is_shown_as_it_is() -> None:
     text = json.dumps(approval_blocks("r", [odd], requester="U1"), ensure_ascii=False)
 
     assert "not json at all" in text
+
+
+def test_the_preview_of_the_create_tool_shows_the_ticket_and_not_an_empty_request() -> None:
+    approval = {
+        "tool_call_id": "c9",
+        "tool_name": "tamy_create_ticket",
+        "description": "Tamy: create ticket",
+        "params": {
+            "summary": "DRE: exportar PDF gira sem baixar",
+            "ticket_type": "bug",
+            "priority": "P2",
+            "priority_reason": "a DRE ainda abre na tela",
+            "client": "loja 3",
+            "answers_json": json.dumps({"bug_actual": "O botão gira e não baixa", "bug_steps": "1. abri a DRE"}),
+        },
+    }
+
+    text = json.dumps(approval_blocks("r", [approval], requester="U1"), ensure_ascii=False)
+
+    assert "DRE: exportar PDF gira sem baixar" in text
+    assert "bug, P2" in text and "loja 3" in text
+    assert "O botão gira e não baixa" in text
+    assert "GET" not in text and "None" not in text
