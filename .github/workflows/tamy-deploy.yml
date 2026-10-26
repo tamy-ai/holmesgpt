@@ -1,0 +1,50 @@
+# Deploys the two Tamy services to Railway on every push to master that touches them.
+# Railway's GitHub app has no access to this repo, so the CI uploads the code with a project token.
+name: Tamy deploy
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "tamy/**"
+      - "holmes/**"
+      - "server.py"
+      - "Dockerfile.tamy-holmes"
+      - "Dockerfile.tamy-slack"
+      - "pyproject.toml"
+      - "poetry.lock"
+      - ".github/workflows/tamy-deploy.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: tamy-deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pytest httpx slack-bolt pydantic python-dateutil pyyaml
+      - run: python -m pytest -c tamy/pytest.ini --rootdir tamy tamy -p no:cacheprovider -q
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1
+      matrix:
+        service: [holmes, holmes-slack]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trim the upload
+        run: rm -rf .git tests docs examples helm images specs bin
+      - name: Deploy ${{ matrix.service }}
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          npm install -g @railway/cli
+          railway up --service ${{ matrix.service }} --ci
