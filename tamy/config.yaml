@@ -1,0 +1,87 @@
+# Holmes da Tamy (decisao 0751 do tamy-consultant).
+# Segredos vem de variaveis de ambiente do Railway, nunca deste arquivo.
+
+model: vertex_ai/gemini-3.1-flash-lite   # troque pela variavel MODEL se precisar
+custom_skill_paths:
+  - /app/tamy/skills
+
+toolsets:
+  # O que a Tamy NAO usa: nada de shell nem de Kubernetes. O Holmes roda no Railway.
+  bash: { enabled: false }
+  kubernetes/core: { enabled: false }
+  kubernetes/logs: { enabled: false }
+  kubernetes/kube-prometheus-stack: { enabled: false }
+  kubernetes/live-metrics: { enabled: false }
+  helm/core: { enabled: false }
+  cilium/core: { enabled: false }
+  argocd/core: { enabled: false }
+  docker/core: { enabled: false }
+
+  prometheus/metrics:
+    enabled: true
+    config:
+      prometheus_url: "{{ env.PROMETHEUS_URL }}"
+
+  grafana/loki:
+    enabled: true
+    config:
+      api_url: "{{ env.GRAFANA_URL }}"
+      api_key: "{{ env.GRAFANA_TOKEN }}"
+      grafana_datasource_uid: "{{ env.GRAFANA_LOKI_UID }}"
+
+  # Langfuse: traces e sessoes de conversa (so leitura).
+  langfuse:
+    type: http
+    enabled: true
+    config:
+      endpoints:
+        - hosts: ["{{ env.LANGFUSE_HOST_NAME }}"]
+          paths: ["/api/public/traces", "/api/public/traces/*", "/api/public/sessions", "/api/public/sessions/*", "/api/public/observations", "/api/public/observations/*", "/api/public/scores"]
+          methods: ["GET"]
+          auth:
+            type: basic
+            username: "{{ env.LANGFUSE_PUBLIC_KEY }}"
+            password: "{{ env.LANGFUSE_SECRET_KEY }}"
+    llm_instructions: |
+      ### Langfuse (traces do chat da Tamy)
+      Base: {{ env.LANGFUSE_HOST }} (so GET).
+      - GET /api/public/traces?sessionId={id}&limit=10 - traces de uma conversa
+      - GET /api/public/traces/{traceId} - um trace com as chamadas
+      - GET /api/public/sessions/{sessionId} - uma sessao inteira
+      O `sessionId` e o id da conversa (chat session). Nunca cole o texto do cliente no
+      chamado: cite o link e o id do trace.
+
+  # Jira, so leitura.
+  jira-read:
+    type: http
+    enabled: true
+    config:
+      endpoints:
+        - hosts: ["api.atlassian.com"]
+          paths: ["/ex/jira/*/rest/api/3/search/jql", "/ex/jira/*/rest/api/3/issue/*", "/ex/jira/*/rest/api/3/project/*", "/ex/jira/*/rest/api/3/priority", "/ex/jira/*/rest/api/3/issuetype", "/ex/jira/*/rest/api/3/field", "/ex/jira/*/rest/api/3/user/search", "/ex/jira/*/rest/api/3/label"]
+          methods: ["GET"]
+          auth:
+            type: basic
+            username: "{{ env.JIRA_EMAIL }}"
+            password: "{{ env.JIRA_API_TOKEN }}"
+    llm_instructions: |
+      ### Jira (leitura)
+      Base: {{ env.JIRA_GATEWAY_URL }} . Projeto: TA.
+      - GET /rest/api/3/search/jql?jql={JQL CODIFICADA}&fields=summary,status,labels,assignee,priority,issuetype,duedate&maxResults=20
+        A JQL vai na URL: codifique espacos como %20, "=" como %3D, aspas como %22 e ">" como %3E.
+        Exemplo completo (os 5 mais recentes): {{ env.JIRA_GATEWAY_URL }}/rest/api/3/search/jql?jql=project%20%3D%20TA%20ORDER%20BY%20created%20DESC&fields=summary,status&maxResults=5
+      - GET /rest/api/3/issue/{KEY}?fields=summary,description,status,labels,comment,assignee
+      Para achar duplicata, busque por `project = TA AND text ~ "palavras do titulo" ORDER BY created DESC`.
+
+  # Chamados: a regra da Tamy (checklist, prazo, rotulos, descricao, duplicata) mora no
+  # codigo de tamy/chamados. A escrita no Jira so passa por aqui, e SEMPRE pede o clique de
+  # quem pediu (tamy_create_ticket tem aprovacao obrigatoria no proprio toolset).
+  tamy/chamados:
+    enabled: true
+    llm_instructions: |
+      ### Chamados da Tamy
+      Siga as skills `chamado-regras` e a do tipo antes de criar. Fluxo: (1) classifique tipo,
+      prioridade, area e canal; (2) chame `tamy_preview_ticket` e pergunte so o que faltar;
+      (3) chame `tamy_find_similar_tickets` e mostre os parecidos; (4) chame `tamy_create_ticket`
+      (a pessoa aprova no Slack). Nunca crie sem as respostas obrigatorias. `thread_ref` e
+      CANAL-TS do fio do Slack. Nunca invente uma resposta: pergunte.
