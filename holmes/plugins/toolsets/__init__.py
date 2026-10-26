@@ -64,6 +64,7 @@ from holmes.plugins.toolsets.robusta_platform_mcp.robusta_platform_mcp import (
     make_robusta_platform_mcp_toolset,
 )
 from holmes.plugins.toolsets.skills.skills_fetcher import SkillsToolset
+from holmes.plugins.toolsets.tamy_chamados.toolset import TamyChamadosToolset
 from holmes.plugins.toolsets.servicenow_tables.servicenow_tables import (
     ServiceNowTablesToolset,
 )
@@ -105,6 +106,7 @@ def load_python_toolsets(
         CoreInvestigationToolset(),  # Load first for higher priority
         InternetToolset(),
         ConnectivityCheckToolset(),
+        TamyChamadosToolset(),
         RobustaToolset(dal),
         multi_instance(GrafanaLokiToolset),
         multi_instance(GrafanaTempoToolset),
