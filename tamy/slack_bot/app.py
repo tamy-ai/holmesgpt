@@ -51,6 +51,21 @@ class BoltSlack:
     def update(self, **kwargs: Any) -> None:
         self._client.chat_update(**kwargs)
 
+    def permalink(self, channel: str, ts: str) -> str:
+        try:
+            return str(self._client.chat_getPermalink(channel=channel, message_ts=ts)["permalink"])
+        except Exception:
+            logger.exception("could not get the thread link")
+            return ""
+
+    def display_name(self, user: str) -> str:
+        try:
+            profile = self._client.users_info(user=user)["user"]
+            return str(profile.get("real_name") or profile.get("name") or "")
+        except Exception:
+            logger.exception("could not get the user name")
+            return ""
+
     def replies(self, channel: str, thread_ts: str) -> list[dict[str, Any]]:
         try:
             return list(self._client.conversations_replies(channel=channel, ts=thread_ts, limit=40)["messages"])

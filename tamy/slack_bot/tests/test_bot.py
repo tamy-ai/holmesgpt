@@ -24,6 +24,12 @@ class FakeSlack:
     def replies(self, channel: str, thread_ts: str) -> list[dict[str, Any]]:
         return self.thread
 
+    def permalink(self, channel: str, ts: str) -> str:
+        return f"https://slack.test/{channel}/{ts}"
+
+    def display_name(self, user: str) -> str:
+        return "Matheus"
+
 
 class FakeHolmes:
     def __init__(self, answers: list[dict[str, Any]]) -> None:
@@ -65,7 +71,7 @@ def test_a_question_gets_one_answer_in_the_thread() -> None:
     assert "O CMV está em 31%" in slack.updates[-1]["text"]
     assert slack.posts[0]["thread_ts"] == "1.0"
     payload = holmes.calls[0]
-    assert payload["ask"] == "qual o CMV?"
+    assert payload["ask"].startswith("qual o CMV?")
     assert payload["enable_tool_approval"] is True
     assert payload["additional_system_prompt"] == SYSTEM_PROMPT
 
@@ -181,3 +187,15 @@ def test_a_pause_without_text_never_shows_the_word_none() -> None:
     bot.ask(channel="C1", thread_ts="1.0", user="U9", text="abre um bug")
 
     assert "None" not in slack.updates[0]["text"]
+
+
+def test_the_ask_carries_the_thread_data_the_ticket_needs() -> None:
+    bot, _, holmes, _ = _bot([_answer("ok")])
+
+    bot.ask(channel="C1", thread_ts="1.0", user="U9", text="abre um bug")
+
+    ask = holmes.calls[0]["ask"]
+    assert "thread_ref=C1-1.0" in ask
+    assert "thread_url=https://slack.test/C1/1.0" in ask
+    assert "requester=Matheus" in ask
+    assert "U9" not in ask
