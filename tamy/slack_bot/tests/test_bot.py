@@ -216,21 +216,21 @@ def _click(bot: Bot, slack: FakeSlack, approved: bool) -> str:
 
 
 def test_an_approved_creation_gets_the_files_and_links_of_the_thread() -> None:
-    calls: list[tuple[str, str, str, str]] = []
+    calls: list[tuple[str, str, str]] = []
 
-    def enricher(key: str, channel: str, thread_ts: str, area: str) -> str:
-        calls.append((key, channel, thread_ts, area))
+    def enricher(channel: str, thread_ts: str, area: str) -> str:
+        calls.append((channel, thread_ts, area))
         return "Anexei 2 arquivos e 3 links ao chamado."
 
     bot, slack, _, _ = _bot(
-        [_answer("vou criar", pending_approvals=[_create_pending("dre")]), _answer("Chamado criado: <https://x/browse/TA-77|TA-77>")],
+        [_answer("vou criar", pending_approvals=[_create_pending("dre")]), _answer("Preparei o comentário.")],
         enricher,
     )
     bot.ask(channel="C1", thread_ts="1.0", user="U9", text="abre um bug")
 
     _click(bot, slack, True)
 
-    assert calls == [("TA-77", "C1", "1.0", "dre")]
+    assert calls == [("C1", "1.0", "dre")]
     assert any("Anexei 2 arquivos" in p.get("text", "") for p in slack.posts)
 
 
@@ -246,18 +246,5 @@ def test_a_denied_creation_or_a_comment_never_enriches() -> None:
     bot2, slack2, _, _ = _bot([_answer("vou comentar", pending_approvals=[comment]), _answer("Comentei no TA-5")], enricher)
     bot2.ask(channel="C1", thread_ts="1.0", user="U9", text="comenta")
     _click(bot2, slack2, True)
-
-    assert calls == []
-
-
-def test_an_answer_with_no_ticket_key_does_not_enrich() -> None:
-    calls: list[Any] = []
-    bot, slack, _, _ = _bot(
-        [_answer("vou criar", pending_approvals=[_create_pending()]), _answer("Faltou um dado, pergunto já.")],
-        lambda *a: calls.append(a) or "",
-    )
-    bot.ask(channel="C1", thread_ts="1.0", user="U9", text="abre um bug")
-
-    _click(bot, slack, True)
 
     assert calls == []

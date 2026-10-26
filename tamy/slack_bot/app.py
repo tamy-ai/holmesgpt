@@ -23,7 +23,7 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from tamy.chamados.jira_rest import JiraClient, move_to_status
 from tamy.slack_bot.bot import Bot
-from tamy.slack_bot.enrich import Links, describe, enrich_ticket
+from tamy.slack_bot.enrich import Links, describe, enrich_ticket, find_ticket
 from tamy.slack_bot.sse import final_message
 from tamy.slack_bot.state import Store
 from tamy.slack_bot.sync import answer_resolved, run_sync
@@ -184,8 +184,11 @@ def build_app() -> tuple[App, SocketModeHandler]:
         langfuse_project=os.environ.get("LANGFUSE_PROJECT_ID", ""),
     )
 
-    def enrich(key: str, channel: str, thread_ts: str, area: str) -> str:
+    def enrich(channel: str, thread_ts: str, area: str) -> str:
         assert jira is not None
+        key = find_ticket(jira, channel, thread_ts)
+        if key is None:
+            return ""
         result = enrich_ticket(
             key, channel, thread_ts, slack.replies(channel, thread_ts), slack_downloader(bot_token), jira, area, links
         )

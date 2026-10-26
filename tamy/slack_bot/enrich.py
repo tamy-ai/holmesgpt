@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import urllib.parse
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -51,6 +52,11 @@ class EnrichJira(Protocol):
     def add_attachment(self, key: str, file: MultipartFile) -> None: ...
 
     def add_remote_link(self, key: str, url: str, title: str) -> None: ...
+
+    def add_label(self, key: str, label: str) -> None: ...
+
+
+ENRICHED_LABEL = "slack-enriquecido"
 
 
 def files_of(messages: list[dict[str, Any]]) -> list[SlackFile]:
@@ -103,8 +109,11 @@ def enrich_ticket(
     area_slug: str,
     links: Links,
 ) -> EnrichResult:
-    if f"slack-{channel}-{thread_ts}" not in jira.issue_labels(key):
+    labels = jira.issue_labels(key)
+    if f"slack-{channel}-{thread_ts}" not in labels or ENRICHED_LABEL in labels:
         return EnrichResult(skipped=True)
+    # Marked first: a failure after this never repeats the files.
+    jira.add_label(key, ENRICHED_LABEL)
     attached, failed = attach_files(files_of(messages), download, jira, key)
     added = 0
     for title, url in links_for(area_slug, links):
@@ -139,3 +148,26 @@ def describe(result: EnrichResult) -> str:
     if result.failed:
         text += f" Mas não consegui anexar {result.failed}."
     return text.strip()
+
+
+class FindJira(Protocol):
+    def search(self, jql: str, **options: Any) -> list[dict[str, Any]]: ...
+
+
+def find_ticket(
+    jira: FindJira,
+    channel: str,
+    thread_ts: str,
+    attempts: int = 5,
+    wait_s: float = 3.0,
+    sleep: Callable[[float], None] = time.sleep,
+) -> str | None:
+    """The ticket of one thread, by its label. Jira indexes a new ticket a few seconds late."""
+    jql = f"project = TA AND labels = slack-{channel}-{thread_ts}"
+    for attempt in range(attempts):
+        found = jira.search(jql, fields=("summary",))
+        if found:
+            return str(found[0]["key"])
+        if attempt < attempts - 1:
+            sleep(wait_s)
+    return None

@@ -64,12 +64,12 @@ class Bot:
         slack: Slack,
         holmes: Holmes,
         store: Store,
-        enricher: Callable[[str, str, str, str], str] | None = None,
+        enricher: Callable[[str, str, str], str] | None = None,
     ) -> None:
         self._slack = slack
         self._holmes = holmes
         self._store = store
-        # (ticket key, channel, thread, area) -> the line to tell the thread, or "".
+        # (channel, thread, area) -> the line to tell the thread, or "" when there is no ticket yet.
         self._enricher = enricher
 
     def thread_context(self, channel: str, thread_ts: str) -> str:
@@ -131,19 +131,20 @@ class Bot:
             "user_id": user,
             "conversation_id": f"{pending.channel}-{pending.thread_ts}",
         }
-        analysis = self._finish(payload, pending.channel, pending.thread_ts, pending.requester, working)
+        self._finish(payload, pending.channel, pending.thread_ts, pending.requester, working)
         if approved and pending.create_area is not None:
-            self._enrich(pending, analysis)
+            self._enrich(pending)
         return "Aprovado." if approved else "Negado."
 
-    def _enrich(self, pending: Pending, analysis: str) -> None:
-        match = re.search(r"\bTA-\d+\b", analysis)
-        if self._enricher is None or match is None:
+    def _enrich(self, pending: Pending) -> None:
+        """The ticket exists after the click, but the answer does not always name it: the
+        enricher finds it by the label of the thread."""
+        if self._enricher is None:
             return
         try:
-            line = self._enricher(match.group(0), pending.channel, pending.thread_ts, pending.create_area or "")
+            line = self._enricher(pending.channel, pending.thread_ts, pending.create_area or "")
         except Exception:
-            logger.exception("could not enrich %s", match.group(0))
+            logger.exception("could not enrich the ticket of %s", pending.thread_ts)
             return
         if line:
             self._slack.post(channel=pending.channel, thread_ts=pending.thread_ts, text=line)

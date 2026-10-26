@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from tamy.chamados.jira_rest import MultipartFile
-from tamy.slack_bot.enrich import EnrichResult, Links, attach_files, describe, enrich_ticket, files_of, links_for
+from tamy.slack_bot.enrich import EnrichResult, Links, attach_files, describe, enrich_ticket, files_of, find_ticket, links_for
 
 THREAD_LABEL = "slack-C1-1.0"
 
@@ -40,7 +40,10 @@ def test_at_most_ten_files() -> None:
 
 class FakeJira:
     def __init__(self, labels: list[str]) -> None:
-        self.labels, self.attached, self.links = labels, [], []
+        self.labels, self.attached, self.links, self.added = labels, [], [], []
+
+    def add_label(self, key: str, label: str) -> None:
+        self.added.append((key, label))
 
     def issue_labels(self, key: str) -> list[str]:
         return self.labels
@@ -107,3 +110,43 @@ def test_the_thread_is_told_what_went_in_and_what_did_not() -> None:
     assert "não consegui anexar 1" in describe(EnrichResult(attached=1, failed=1, links=2))
     assert describe(EnrichResult(links=2)) == "Deixei 2 links no chamado."
     assert describe(EnrichResult(skipped=True)) == ""
+
+
+class SearchJira:
+    def __init__(self, answers: list[list[dict[str, Any]]]) -> None:
+        self.answers, self.queries = list(answers), []
+
+    def search(self, jql: str, **_: Any) -> list[dict[str, Any]]:
+        self.queries.append(jql)
+        return self.answers.pop(0) if self.answers else []
+
+
+def test_the_ticket_of_a_thread_is_found_by_its_label_even_when_jira_indexes_late() -> None:
+    jira = SearchJira([[], [], [{"key": "TA-5"}]])
+    waits: list[float] = []
+
+    key = find_ticket(jira, "C1", "1.0", attempts=4, wait_s=2.0, sleep=waits.append)
+
+    assert key == "TA-5" and waits == [2.0, 2.0]
+    assert "labels = slack-C1-1.0" in jira.queries[0]
+
+
+def test_no_ticket_after_all_attempts_is_none_not_a_guess() -> None:
+    assert find_ticket(SearchJira([]), "C1", "1.0", attempts=3, wait_s=0.0, sleep=lambda s: None) is None
+
+
+def test_a_ticket_already_enriched_is_never_enriched_twice() -> None:
+    jira = FakeJira([THREAD_LABEL, "slack-enriquecido"])
+    messages = [{"user": "U1", "files": [_file("a.png")]}]
+
+    result = enrich_ticket("TA-1", "C1", "1.0", messages, lambda url: b"x", jira, "vendas", Links("https://g", "https://l", "p"))
+
+    assert result.skipped and jira.attached == []
+
+
+def test_the_ticket_is_marked_after_it_is_enriched() -> None:
+    jira = FakeJira([THREAD_LABEL])
+
+    enrich_ticket("TA-1", "C1", "1.0", [], lambda url: b"x", jira, "vendas", Links("https://g", "https://l", "p"))
+
+    assert jira.added == [("TA-1", "slack-enriquecido")]
