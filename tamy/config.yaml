@@ -2,6 +2,7 @@
 # Segredos vem de variaveis de ambiente do Railway, nunca deste arquivo.
 
 model: vertex_ai/gemini-3.1-pro-preview   # creating a ticket needs reasoning; flash-lite asked for data the thread already had
+max_steps: 25   # a investigacao tem teto: sem ele o Holmes buscou 93 vezes no codigo e o Slack desistiu
 custom_skill_paths:
   - /app/tamy/skills
 
