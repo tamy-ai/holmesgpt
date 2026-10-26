@@ -97,6 +97,9 @@ def _create_ticket_preview(params: dict[str, Any]) -> str:
 
 def _preview_of(approval: dict[str, Any]) -> str:
     params = approval.get("params", {})
+    if approval.get("tool_name") == "tamy_comment_ticket":
+        comment = str(params.get("comment", ""))[:MAX_BODY_PREVIEW]
+        return f"*Comentar em {params.get('ticket_key', '?')}* (a investigação)\n```{comment}```"
     if approval.get("tool_name") == "tamy_create_ticket":
         return _create_ticket_preview(params)
     url = str(params.get("url", ""))

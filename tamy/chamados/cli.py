@@ -27,6 +27,7 @@ from tamy.chamados.jira_ticket import (
     issue_type_name,
     link_label,
 )
+from tamy.chamados.jira_rest import adf_blocks, adf_heading, adf_paragraph, adf_text
 from tamy.chamados.sla import due_date
 
 PROJECT_KEY = "TA"
@@ -242,6 +243,43 @@ def _create_checked(
     )
     result.key = jira.create_issue(build_issue_fields(request, allowed))
     return result
+
+
+_TICKET_KEY = re.compile(rf"^{PROJECT_KEY}-\d+$")
+BOT_ORIGIN_LABEL = "origem-slack"
+MAX_COMMENT_CHARS = 20000
+
+
+class CommentJira(Protocol):
+    def issue_labels(self, key: str) -> list[str]: ...
+
+    def add_comment(self, key: str, body: dict[str, Any]) -> None: ...
+
+
+def _comment_doc(text: str) -> dict[str, Any]:
+    blocks: list[dict[str, Any]] = []
+    for chunk in re.split(r"\n\s*\n", text.strip()):
+        for line in chunk.splitlines():
+            if not line.strip():
+                continue
+            heading = re.match(r"^h([1-6])\.\s*(.*)$", line.strip())
+            if heading:
+                blocks.append(adf_heading(heading.group(2), int(heading.group(1))))
+            else:
+                blocks.append(adf_paragraph([adf_text(line.strip())]))
+    return adf_blocks(blocks)
+
+
+def comment_investigation(key: str, text: str, jira: CommentJira) -> Result:
+    """Adds the investigation to a ticket this bot opened. Never touches another ticket."""
+    if not _TICKET_KEY.match(key):
+        return Result(ok=False, error=f"A chave {key!r} não é de um chamado do projeto {PROJECT_KEY}.")
+    if not text.strip():
+        return Result(ok=False, error="O comentário está vazio.")
+    if BOT_ORIGIN_LABEL not in jira.issue_labels(key):
+        return Result(ok=False, error=f"{key} não foi aberto por este bot. Não comento em chamado alheio.")
+    jira.add_comment(key, _comment_doc(text[:MAX_COMMENT_CHARS]))
+    return Result(ok=True, key=key)
 
 
 # Answer ids the model may send beyond the checklist of the type.

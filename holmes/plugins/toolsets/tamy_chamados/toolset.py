@@ -167,6 +167,37 @@ class CreateTicket(Tool):
         return f"Tamy: create ticket {params.get('summary', '')}"
 
 
+class CommentTicket(Tool):
+    toolset: "TamyChamadosToolset" = None  # type: ignore
+
+    def __init__(self, toolset: "TamyChamadosToolset"):
+        super().__init__(
+            name="tamy_comment_ticket",
+            description=(
+                "Add the investigation as a comment on a ticket that this bot opened (label "
+                "origem-slack). Refuses any other ticket. Needs the person's approval."
+            ),
+            parameters={
+                "ticket_key": ToolParameter(description="Ticket key, for example TA-1359", type="string", required=True),
+                "comment": ToolParameter(
+                    description="The investigation text, in Portuguese: probable cause, evidence with links, what to check",
+                    type="string",
+                    required=True,
+                ),
+            },
+        )
+        self.toolset = toolset
+
+    def _invoke(self, params: dict, context: ToolInvokeContext) -> StructuredToolResult:
+        result = cli.comment_investigation(
+            str(params.get("ticket_key", "")), str(params.get("comment", "")), self.toolset.client()
+        )
+        return _ok(result.to_json(), params)
+
+    def get_parameterized_one_liner(self, params: dict) -> str:
+        return f"Tamy: comment on {params.get('ticket_key', '')}"
+
+
 class TamyChamadosToolset(Toolset):
     def __init__(self) -> None:
         super().__init__(
@@ -174,11 +205,11 @@ class TamyChamadosToolset(Toolset):
             description="Create Tamy tickets in Jira with the team's rules",
             icon_url="https://platform.robusta.dev/demos/jira.svg",
             prerequisites=[CallablePrerequisite(callable=self.prerequisites_callable)],
-            tools=[PreviewTicket(self), FindSimilar(self), CreateTicket(self)],
+            tools=[PreviewTicket(self), FindSimilar(self), CreateTicket(self), CommentTicket(self)],
             tags=[ToolsetTag.CORE],
             enabled=False,
             # The write tool never runs without a click, whatever the config says.
-            approval_required_tools=["tamy_create_ticket"],
+            approval_required_tools=["tamy_create_ticket", "tamy_comment_ticket"],
         )
         self._client: JiraClient | None = None
 

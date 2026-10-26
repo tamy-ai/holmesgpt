@@ -147,3 +147,16 @@ def test_the_preview_of_the_create_tool_shows_the_ticket_and_not_an_empty_reques
     assert "bug, P2" in text and "loja 3" in text
     assert "O botão gira e não baixa" in text
     assert "GET" not in text and "None" not in text
+
+
+def test_the_preview_of_the_comment_tool_names_the_ticket_and_shows_the_text() -> None:
+    approval = {
+        "tool_call_id": "c10",
+        "tool_name": "tamy_comment_ticket",
+        "description": "x",
+        "params": {"ticket_key": "TA-1359", "comment": "Causa provável: rota do export"},
+    }
+
+    text = json.dumps(approval_blocks("r", [approval], requester="U1"), ensure_ascii=False)
+
+    assert "TA-1359" in text and "Causa provável" in text and "GET" not in text

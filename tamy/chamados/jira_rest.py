@@ -292,6 +292,10 @@ class JiraClient:
             {"update": {"labels": [{"add": label}]}},
         )
 
+    def issue_labels(self, key: str) -> list[str]:
+        labels = self.get_issue(key, ["labels"]).get("labels")
+        return [str(label) for label in labels] if isinstance(labels, list) else []
+
     def add_comment(self, key: str, body: AdfNode) -> None:
         self.request("POST", f"/rest/api/3/issue/{key}/comment", {"body": body})
 

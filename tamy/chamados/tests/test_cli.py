@@ -10,7 +10,7 @@ import datetime
 import json
 from typing import Any
 
-from tamy.chamados.cli import Result, TicketInput, create, preview, similar
+from tamy.chamados.cli import Result, TicketInput, comment_investigation, create, preview, similar
 from tamy.chamados.common import BUSINESS_TZ
 
 NOW = datetime.datetime(2026, 10, 26, 10, 0, tzinfo=BUSINESS_TZ)
@@ -207,3 +207,43 @@ def test_a_failed_create_does_not_block_the_retry() -> None:
         pass
 
     assert create(BUG, FakeJira(), now=NOW).ok
+
+
+class CommentJira:
+    def __init__(self, labels: list[str]) -> None:
+        self.labels = labels
+        self.comments: list[tuple[str, dict[str, Any]]] = []
+
+    def issue_labels(self, key: str) -> list[str]:
+        return self.labels
+
+    def add_comment(self, key: str, body: dict[str, Any]) -> None:
+        self.comments.append((key, body))
+
+
+def test_the_investigation_becomes_a_comment_on_a_ticket_the_bot_opened() -> None:
+    jira = CommentJira(["origem-slack", "tipo-bug"])
+
+    result = comment_investigation("TA-1359", "h3. Causa provável\nNão achei erro.\n\nConfiança: baixa", jira)
+
+    assert result.ok
+    key, body = jira.comments[0]
+    assert key == "TA-1359" and body["type"] == "doc"
+    assert "Causa provável" in json.dumps(body, ensure_ascii=False)
+
+
+def test_a_ticket_the_bot_did_not_open_is_never_commented() -> None:
+    jira = CommentJira(["tipo-bug"])
+
+    result = comment_investigation("TA-1359", "texto", jira)
+
+    assert not result.ok and jira.comments == []
+
+
+def test_a_key_outside_the_ta_project_or_an_empty_text_writes_nothing() -> None:
+    jira = CommentJira(["origem-slack"])
+
+    assert not comment_investigation("OPS-1", "texto", jira).ok
+    assert not comment_investigation("TA-1; DROP", "texto", jira).ok
+    assert not comment_investigation("TA-1359", "   ", jira).ok
+    assert jira.comments == []
