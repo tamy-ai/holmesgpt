@@ -1,0 +1,9 @@
+# O bot de Slack do Holmes da Tamy (servico `holmes-slack`). Leve: so chama o servidor.
+FROM python:3.11-slim
+WORKDIR /app
+COPY tamy/slack_bot/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+COPY tamy/__init__.py /app/tamy/__init__.py
+COPY tamy/slack_bot /app/tamy/slack_bot
+ENV PYTHONPATH=/app PYTHONUNBUFFERED=1
+CMD ["python", "-m", "tamy.slack_bot.app"]
