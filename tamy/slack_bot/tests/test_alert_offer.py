@@ -8,6 +8,7 @@ from tamy.slack_bot.app import (
     ALERT_ACTION,
     SUPPORT_ACTION,
     alert_offer_blocks,
+    alert_source,
     alert_ticket_handler,
     alert_ticket_request,
     offer_for,
@@ -74,7 +75,7 @@ def test_the_alert_offer_is_its_own_button_and_carries_the_thread() -> None:
 
     assert button["action_id"] == ALERT_ACTION != SUPPORT_ACTION
     assert button["text"]["text"] == "Criar ticket"
-    assert button["value"] == f"{ALERTS}|17.1"
+    assert button["value"] == f"{ALERTS}|17.1|"
 
 
 def test_the_request_treats_the_alert_as_data_and_asks_for_a_duplicate_check() -> None:
@@ -104,3 +105,70 @@ def test_a_click_asks_holmes_in_the_thread_of_the_alert_as_the_person_who_clicke
     assert fn is ask
     assert (kw["channel"], kw["thread_ts"], kw["user"]) == (ALERTS, "17.1", "U9")
     assert kw["text"] == alert_ticket_request(ALERTS, "17.1")
+
+
+GLITCHTIP_EVENT = _event(
+    text="GlitchTip Alert",
+    attachments=[
+        {
+            "title": "ValueError: Token was created in a different Context",
+            "title_link": "https://glitchtip-production-8e27.up.railway.app/tamy/issues/4",
+        }
+    ],
+)
+GRAFANA_EVENT = _event(
+    attachments=[
+        {
+            "title": "Chat: primeiro token do modelo com p95 acima de 20 s",
+            "title_link": "https://grafana-production-2cc3.up.railway.app/alerting/grafana/tamy-chat-ttft-p95/view?orgId=1",
+        }
+    ],
+)
+
+
+def test_a_glitchtip_alert_names_its_issue() -> None:
+    assert alert_source(GLITCHTIP_EVENT) == "glitchtip:4"
+
+
+def test_a_grafana_alert_names_its_rule() -> None:
+    assert alert_source(GRAFANA_EVENT) == "grafana:tamy-chat-ttft-p95"
+
+
+def test_an_alert_with_no_known_link_names_nothing() -> None:
+    assert alert_source(_event(text="algo quebrou")) == ""
+
+
+def test_the_button_carries_the_source_of_the_alert() -> None:
+    button = alert_offer_blocks(ALERTS, "17.1", "glitchtip:4")[0]["elements"][0]
+
+    assert button["value"] == f"{ALERTS}|17.1|glitchtip:4"
+
+
+def test_a_glitchtip_request_starts_at_the_issue_and_never_looks_for_a_grafana_rule() -> None:
+    text = alert_ticket_request(ALERTS, "17.1", "glitchtip:4")
+
+    assert "/api/0/issues/4/" in text
+    assert "não procure regra no Grafana" in text
+
+
+def test_a_grafana_request_reads_the_rule_by_its_uid() -> None:
+    text = alert_ticket_request(ALERTS, "17.1", "grafana:tamy-chat-ttft-p95")
+
+    assert "/api/v1/provisioning/alert-rules/tamy-chat-ttft-p95" in text
+
+
+def test_every_request_has_a_query_budget_and_stops_on_an_empty_source() -> None:
+    for source in ("", "glitchtip:4", "grafana:x"):
+        text = alert_ticket_request(ALERTS, "17.1", source)
+        assert "no máximo 12 consultas" in text
+        assert "não repita" in text
+
+
+def test_a_click_passes_the_source_to_holmes() -> None:
+    pool = _Pool()
+    handler = alert_ticket_handler(object(), pool)
+
+    handler(lambda: None, {"user": {"id": "U9"}}, {"value": f"{ALERTS}|17.1|glitchtip:4"})
+
+    (_, kw), = pool.calls
+    assert kw["text"] == alert_ticket_request(ALERTS, "17.1", "glitchtip:4")
