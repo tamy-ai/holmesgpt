@@ -30,6 +30,76 @@ toolsets:
       api_key: "{{ env.GRAFANA_TOKEN }}"
       grafana_datasource_uid: "{{ env.GRAFANA_LOKI_UID }}"
 
+  # Tempo: o caminho de uma requisicao pela API, pelo Celery e pelo banco (decisao 0757).
+  grafana/tempo:
+    enabled: true
+    config:
+      api_url: "{{ env.GRAFANA_URL }}"
+      api_key: "{{ env.GRAFANA_TOKEN }}"
+      grafana_datasource_uid: "tempo"
+
+  # GlitchTip: o erro agrupado, com traceback, release e tags (so leitura).
+  glitchtip:
+    type: http
+    enabled: true
+    config:
+      endpoints:
+        - hosts: ["{{ env.GLITCHTIP_HOST_NAME }}"]
+          paths: ["/api/0/organizations/tamy/issues/", "/api/0/issues/*", "/api/0/issues/*/events/", "/api/0/issues/*/events/latest/"]
+          methods: ["GET"]
+          auth:
+            type: bearer
+            token: "{{ env.GLITCHTIP_TOKEN }}"
+    llm_instructions: |
+      ### GlitchTip (erros do backend, do web e do holmes)
+      Base: https://{{ env.GLITCHTIP_HOST_NAME }} (so GET). Org `tamy`; projetos `tamy-backend`, `tamy-web`, `holmes`.
+      - GET /api/0/organizations/tamy/issues/?query=is:unresolved%20{palavras}&limit=10 - erros parecidos
+      - GET /api/0/issues/{id}/ - quantas vezes, primeira e ultima vez, release
+      - GET /api/0/issues/{id}/events/latest/ - traceback e tags (`request_id`, `trace_id`, `org_id`, `release`)
+      O alerta do GlitchTip traz o link da issue: o numero no fim e o {id}. Use o `trace_id` no Tempo e o
+      `request_id` no Loki. Nunca copie dado pessoal do evento para o ticket: cite o link e o id.
+
+  # Grafana: a regra do alerta e quando ela disparou (so leitura).
+  grafana-alerts:
+    type: http
+    enabled: true
+    config:
+      endpoints:
+        - hosts: ["{{ env.GRAFANA_HOST_NAME }}"]
+          paths: ["/api/v1/provisioning/alert-rules/*", "/api/prometheus/grafana/api/v1/rules", "/api/annotations"]
+          methods: ["GET"]
+          auth:
+            type: bearer
+            token: "{{ env.GRAFANA_TOKEN }}"
+    llm_instructions: |
+      ### Alertas do Grafana
+      Base: {{ env.GRAFANA_URL }} (so GET).
+      - GET /api/prometheus/grafana/api/v1/rules - todas as regras com o estado atual; ache a do alerta pelo titulo
+      - GET /api/v1/provisioning/alert-rules/{uid} - a consulta e o limiar da regra
+      - GET /api/annotations?type=alert&limit=100&from={ms}&to={ms} - quando disparou e voltou ao normal
+      Diga no ticket desde quando o alerta dispara, quantas vezes disparou em 30 dias e a consulta que ele mede.
+      A regra mora no codigo em `profiling/grafana/publicar.py`.
+
+  # GitHub: o que mudou entre duas versoes, para ligar o alerta a um deploy (so leitura).
+  github-releases:
+    type: http
+    enabled: true
+    config:
+      endpoints:
+        - hosts: ["api.github.com"]
+          paths: ["/repos/tamy-ai/tamy-assistant/tags", "/repos/tamy-ai/tamy-assistant/compare/*", "/repos/tamy-ai/tamy-assistant/commits", "/repos/tamy-ai/tamy-assistant/commits/*"]
+          methods: ["GET"]
+          auth:
+            type: bearer
+            token: "{{ env.GITHUB_READ_TOKEN }}"
+    llm_instructions: |
+      ### Versoes do produto (GitHub)
+      Cada release de producao e uma tag `vX.Y.Z` do repositorio tamy-ai/tamy-assistant.
+      - GET https://api.github.com/repos/tamy-ai/tamy-assistant/tags?per_page=10 - as ultimas versoes
+      - GET https://api.github.com/repos/tamy-ai/tamy-assistant/compare/{tag_antes}...{tag_depois} - os commits; o titulo traz o PR `(#N)` e o ticket `TA-N`
+      - GET https://api.github.com/repos/tamy-ai/tamy-assistant/commits?since={ISO}&sha=main - o que entrou em producao desde uma data
+      Se o alerta comecou perto de um deploy, cite a versao e o PR suspeito, e diga que e suspeita, nao prova.
+
   # Langfuse: traces e sessoes de conversa (so leitura).
   langfuse:
     type: http
