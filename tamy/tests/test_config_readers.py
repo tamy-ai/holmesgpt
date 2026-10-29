@@ -53,3 +53,15 @@ def test_holmes_reads_traces_through_the_grafana_tempo_datasource() -> None:
 
     assert tempo["enabled"] is True
     assert tempo["config"]["grafana_datasource_uid"] == "tempo"
+
+
+def test_a_real_alert_investigation_fits_in_the_step_budget() -> None:
+    # 29/10: a real GlitchTip alert used 25 steps in 93 s and never reached the ticket.
+    # The Slack bot waits 420 s, so 40 steps still fit.
+    assert yaml.safe_load(CONFIG.read_text())["max_steps"] == 40
+
+
+def test_holmes_queries_loki_by_the_label_locomotive_writes() -> None:
+    loki = _toolsets()["grafana/loki"]
+
+    assert 'service_name="background"' in loki["llm_instructions"]

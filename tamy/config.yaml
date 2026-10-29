@@ -2,7 +2,7 @@
 # Segredos vem de variaveis de ambiente do Railway, nunca deste arquivo.
 
 model: vertex_ai/gemini-3.1-pro-preview   # creating a ticket needs reasoning; flash-lite asked for data the thread already had
-max_steps: 25   # a investigacao tem teto: sem ele o Holmes buscou 93 vezes no codigo e o Slack desistiu
+max_steps: 40   # teto: sem ele o Holmes buscou 93 vezes. Em 29/10 um alerta real gastou 25 passos em 93 s sem chegar ao ticket; o bot espera 420 s
 custom_skill_paths:
   - /app/tamy/skills
 
@@ -29,6 +29,14 @@ toolsets:
       api_url: "{{ env.GRAFANA_URL }}"
       api_key: "{{ env.GRAFANA_TOKEN }}"
       grafana_datasource_uid: "{{ env.GRAFANA_LOKI_UID }}"
+    llm_instructions: |
+      ### Loki (log dos servicos da Tamy)
+      O rotulo e `service_name`, nunca `service`. Valores: api-server, background, web-server,
+      indexing-model-server, inference-model-server, holmes, holmes-slack.
+      - {service_name="background"} | request_id="<id>"
+      - {service_name="background"} | task_name="<tarefa>"
+      - {service_name="api-server"} |= "<texto do erro>"
+      `request_id`, `task_name`, `level` e `trace_id` sao metadado: filtre depois do seletor, sem `| json`.
 
   # Tempo: o caminho de uma requisicao pela API, pelo Celery e pelo banco (decisao 0757).
   grafana/tempo:
