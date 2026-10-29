@@ -22,6 +22,7 @@ from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from tamy.chamados.jira_rest import JiraClient, move_to_status
+from tamy.observability import init_error_reporting
 from tamy.slack_bot.bot import Bot
 from tamy.slack_bot.enrich import Links, describe, enrich_ticket, find_ticket
 from tamy.slack_bot.sse import final_message
@@ -263,6 +264,7 @@ def build_app() -> tuple[App, SocketModeHandler]:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
+    init_error_reporting("holmes-slack")
     _, handler = build_app()
     logger.info("Holmes da Tamy no Slack: conectando")
     handler.start()

@@ -420,6 +420,11 @@ if ENABLE_TELEMETRY and SENTRY_DSN:
         logging.info(
             "Skipping sentry initialization - not an official release and DEVELOPMENT_MODE not enabled"
         )
+else:
+    # Tamy: our image is never an official release; report errors to GlitchTip.
+    from tamy.observability import init_error_reporting
+
+    init_error_reporting("holmes")
 
 
 def stop_conversation_runtime():
